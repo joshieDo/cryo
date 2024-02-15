@@ -114,6 +114,10 @@ pub struct Args {
     #[arg(long, value_name = "M", help_heading = "Acquisition Options")]
     pub max_concurrent_chunks: Option<u64>,
 
+    /// RPC perfomance metrics report
+    #[arg(long, help_heading = "Acquisition Options")]
+    pub metrics: bool,
+
     /// Chunk collection order (normal, reverse, random)
     #[arg(long, help_heading = "Acquisition Options")]
     pub chunk_order: Option<String>,

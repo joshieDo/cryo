@@ -348,6 +348,7 @@ mod tests {
         let semaphore = tokio::sync::Semaphore::new(max_concurrent_requests as usize);
 
         Source {
+            metrics_sender: None,
             provider: provider.into(),
             semaphore: Arc::new(Some(semaphore)),
             rate_limiter: Arc::new(rate_limiter),

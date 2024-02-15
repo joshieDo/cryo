@@ -1,13 +1,18 @@
 use std::env;
 
 use crate::args::Args;
-use cryo_freeze::{sources::ProviderWrapper, ParseError, Source, SourceLabels};
+use cryo_freeze::{
+    metrics::MetricsData, sources::ProviderWrapper, ParseError, Source, SourceLabels,
+};
 use ethers::prelude::*;
 use governor::{Quota, RateLimiter};
 use polars::prelude::*;
 use std::num::NonZeroU32;
+use tokio::sync::mpsc;
 
-pub(crate) async fn parse_source(args: &Args) -> Result<Source, ParseError> {
+pub(crate) async fn parse_source(
+    args: &Args,
+) -> Result<(Source, Option<mpsc::Receiver<MetricsData>>), ParseError> {
     // parse network info
     let rpc_url = parse_rpc_url(args)?;
     let (provider, chain_id): (ProviderWrapper, u64) = if rpc_url.starts_with("http") {
@@ -57,7 +62,14 @@ pub(crate) async fn parse_source(args: &Args) -> Result<Source, ParseError> {
     let semaphore = tokio::sync::Semaphore::new(max_concurrent_requests as usize);
     let semaphore = Arc::new(Some(semaphore));
 
+    let (sender, receiver) = if args.metrics {
+        let (s, r) = mpsc::channel(1000);
+        (Some(s), Some(r))
+    } else {
+        (None, None)
+    };
     let output = Source {
+        metrics_sender: sender,
         chain_id,
         inner_request_size: args.inner_request_size,
         max_concurrent_chunks,
@@ -73,7 +85,7 @@ pub(crate) async fn parse_source(args: &Args) -> Result<Source, ParseError> {
         },
     };
 
-    Ok(output)
+    Ok((output, receiver))
 }
 
 pub(crate) fn parse_rpc_url(args: &Args) -> Result<String, ParseError> {

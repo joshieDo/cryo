@@ -1,17 +1,16 @@
-use std::sync::Arc;
-
 use ethers::prelude::*;
 use governor::{
     clock::DefaultClock,
     middleware::NoOpMiddleware,
     state::{direct::NotKeyed, InMemoryState},
 };
+use std::sync::Arc;
 use tokio::{
-    sync::{AcquireError, Semaphore, SemaphorePermit},
+    sync::{mpsc, AcquireError, Semaphore, SemaphorePermit},
     task,
 };
 
-use crate::CollectError;
+use crate::{metrics::MetricsData, CollectError};
 
 /// RateLimiter based on governor crate
 pub type RateLimiter = governor::RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>;
@@ -35,6 +34,8 @@ pub struct Source {
     pub rate_limiter: Arc<Option<RateLimiter>>,
     /// Labels (these are non-functional)
     pub labels: SourceLabels,
+    /// metrics channel sender
+    pub metrics_sender: Option<mpsc::Sender<MetricsData>>,
 }
 
 /// A non-generic wrapper over different provider types for use as a trait object
@@ -77,14 +78,29 @@ impl From<Provider<Ipc>> for ProviderWrapper {
 /// extract the provider from a source and run specified method
 #[macro_export]
 macro_rules! source_provider {
-    ($source:expr, $method:ident($($arg:expr),*)) => {
-        match &$source.provider {
-            ProviderWrapper::MockProvider(provider) => provider.$method($($arg),*),
-            ProviderWrapper::RetryClientHttp(provider) => provider.$method($($arg),*),
-            ProviderWrapper::WsClient(provider) => provider.$method($($arg),*),
-            ProviderWrapper::IpcClient(provider) => provider.$method($($arg),*),
+    ($source:expr, $method:ident($($arg:expr),*)) => {{
+        let start = $source.metrics_sender.as_ref().and_then(|sender| Some((tokio::time::Instant::now(), sender)));
+        let result = match &$source.provider {
+            ProviderWrapper::MockProvider(provider) => provider.$method($($arg),*).await,
+            ProviderWrapper::RetryClientHttp(provider) => provider.$method($($arg),*).await,
+            ProviderWrapper::WsClient(provider) => provider.$method($($arg),*).await,
+            ProviderWrapper::IpcClient(provider) => provider.$method($($arg),*).await,
+        };
+
+        if let Some((start, sender)) = start {
+            let duration = start.elapsed().as_nanos();
+            let response_size = 0;
+            let _ = sender.send(
+                MetricsData {
+                    method_name: stringify!($method),
+                    duration,
+                    response_size,
+                }
+            ).await;
         }
-    };
+
+        async { result }
+    }};
 }
 
 impl Source {
@@ -168,6 +184,7 @@ impl Source {
         .map_err(|_| CollectError::RPCError("could not connect to provider".to_string()))?;
 
         let source = Source {
+            metrics_sender: None,
             provider: ProviderWrapper::RetryClientHttp(Arc::new(provider)),
             chain_id,
             inner_request_size: DEFAULT_INNER_REQUEST_SIZE,
@@ -184,6 +201,12 @@ impl Source {
         };
 
         Ok(source)
+    }
+
+    /// Enables metric collection over the rpc requests.
+    pub fn with_metrics(mut self, sender: mpsc::Sender<MetricsData>) -> Self {
+        self.metrics_sender = Some(sender);
+        self
     }
 
     // /// set rate limit

@@ -1,6 +1,8 @@
 use crate::{
-    collect_partition, dataframes, err, reports, summaries, CollectError, Datatype, ExecutionEnv,
-    FileOutput, FreezeSummary, MetaDatatype, Partition, Query, Source,
+    collect_partition, dataframes, err,
+    metrics::{metrics_aggregator, MetricsData},
+    reports, summaries, CollectError, Datatype, ExecutionEnv, FileOutput, FreezeSummary,
+    MetaDatatype, Partition, Query, Source,
 };
 use chrono::{DateTime, Local};
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -9,7 +11,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
 
 type PartitionPayload = (
     Partition,
@@ -25,19 +27,20 @@ type PartitionPayload = (
 /// collect data and output as files
 pub async fn freeze(
     query: &Query,
-    source: &Source,
+    source: Source,
     sink: &FileOutput,
     env: &ExecutionEnv,
+    metrics_receiver: Option<mpsc::Receiver<MetricsData>>,
 ) -> Result<Option<FreezeSummary>, CollectError> {
     // check validity of query
     query.is_valid()?;
 
     // get partitions
-    let (payloads, skipping) = get_payloads(query, source, sink, env)?;
+    let (payloads, skipping) = get_payloads(query, &source, sink, env)?;
 
     // print summary
     if env.verbose >= 1 {
-        summaries::print_cryo_intro(query, source, sink, env, payloads.len() as u64)?;
+        summaries::print_cryo_intro(query, &source, sink, env, payloads.len() as u64)?;
     }
 
     // check dry run
@@ -59,8 +62,21 @@ pub async fn freeze(
         reports::write_report(env, query, sink, None)?;
     };
 
+    let mut metrics_handle = None;
+    if let Some(metrics_receiver) = metrics_receiver {
+        metrics_handle = Some(tokio::spawn(metrics_aggregator(metrics_receiver)));
+    }
+
     // perform collection
     let results = freeze_partitions(env, payloads, skipping).await;
+
+    let mut metrics_results = None;
+    if let Some(results) = metrics_handle {
+        // Dropping source will close metrics channel
+        drop(source);
+        metrics_results = Some(results.await);
+        dbg!(metrics_results);
+    }
 
     // create summary
     if env.verbose >= 1 {

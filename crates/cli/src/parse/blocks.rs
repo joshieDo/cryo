@@ -404,6 +404,7 @@ mod tests {
     async fn block_token_test_helper(tests: Vec<(BlockTokenTest<'_>, bool)>) {
         let (provider, mock) = Provider::mocked();
         let source = Source {
+            metrics_sender: None,
             provider: provider.into(),
             semaphore: Arc::new(None),
             rate_limiter: Arc::new(None),
@@ -466,6 +467,7 @@ mod tests {
     async fn block_input_test_helper(tests: Vec<(BlockInputTest<'_>, bool)>) {
         let (provider, mock) = Provider::mocked();
         let source = Arc::new(Source {
+            metrics_sender: None,
             provider: provider.into(),
             chain_id: 1,
             rpc_url: "".to_string(),
@@ -539,6 +541,7 @@ mod tests {
     async fn block_number_test_helper(tests: Vec<(BlockNumberTest<'_>, bool)>) {
         let (provider, mock) = Provider::mocked();
         let source = Source {
+            metrics_sender: None,
             provider: provider.into(),
             semaphore: Arc::new(None),
             rate_limiter: Arc::new(None),

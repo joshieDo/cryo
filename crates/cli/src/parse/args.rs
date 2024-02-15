@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use cryo_freeze::{ExecutionEnv, FileOutput, ParseError, Query, Source};
+use cryo_freeze::{metrics::MetricsData, ExecutionEnv, FileOutput, ParseError, Query, Source};
+use tokio::sync::mpsc;
 
 use crate::args::Args;
 use clap_cryo::Parser;
@@ -10,12 +11,15 @@ use super::{execution, file_output, query, source};
 /// parse options for running freeze
 pub async fn parse_args(
     args: &Args,
-) -> Result<(Query, Source, FileOutput, ExecutionEnv), ParseError> {
-    let source = source::parse_source(args).await?;
+) -> Result<
+    (Query, Source, FileOutput, ExecutionEnv, Option<mpsc::Receiver<MetricsData>>),
+    ParseError,
+> {
+    let (source, metrics_receiver) = source::parse_source(args).await?;
     let query = query::parse_query(args, Arc::new(source.clone())).await?;
     let sink = file_output::parse_file_output(args, &source)?;
     let env = execution::parse_execution_env(args, query.n_tasks() as u64)?;
-    Ok((query, source, sink, env))
+    Ok((query, source, sink, env, metrics_receiver))
 }
 
 /// parse command string

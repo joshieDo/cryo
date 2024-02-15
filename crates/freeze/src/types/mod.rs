@@ -9,6 +9,9 @@ pub mod datatypes;
 /// type specifications for data sources
 pub mod sources;
 
+/// type specifications for metrics
+pub mod metrics;
+
 /// column data specification
 pub mod columns;
 pub use columns::{ColumnData, Dataset, ToDataFrames};

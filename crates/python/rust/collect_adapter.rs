@@ -31,6 +31,7 @@ use cryo_freeze::collect;
         chunk_order = None,
         max_retries = 10,
         initial_backoff = 500,
+        metrics = false,
         dry = false,
         chunk_size = 1000,
         n_chunks = None,
@@ -92,6 +93,7 @@ pub fn _collect(
     chunk_order: Option<String>,
     max_retries: u32,
     initial_backoff: u64,
+    metrics: bool,
     dry: bool,
     chunk_size: u64,
     n_chunks: Option<u64>,
@@ -157,6 +159,7 @@ pub fn _collect(
             chunk_order,
             max_retries,
             initial_backoff,
+            metrics,
             dry,
             chunk_size,
             n_chunks,
@@ -204,7 +207,7 @@ pub fn _collect(
 }
 
 async fn run_collect(args: Args) -> PolarsResult<DataFrame> {
-    let (query, source, _sink, _env) = match parse_args(&args).await {
+    let (query, source, _sink, _env, _) = match parse_args(&args).await {
         Ok(opts) => opts,
         Err(e) => panic!("error parsing opts {:?}", e),
     };
