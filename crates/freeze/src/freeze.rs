@@ -1,6 +1,6 @@
 use crate::{
     collect_partition, dataframes, err,
-    metrics::{metrics_aggregator, MetricsData},
+    metrics::{metrics_aggregator, MetricsData, MetricsReport},
     reports, summaries, CollectError, Datatype, ExecutionEnv, FileOutput, FreezeSummary,
     MetaDatatype, Partition, Query, Source,
 };
@@ -70,14 +70,6 @@ pub async fn freeze(
     // perform collection
     let results = freeze_partitions(env, payloads, skipping).await;
 
-    let mut metrics_results = None;
-    if let Some(results) = metrics_handle {
-        // Dropping source will close metrics channel
-        drop(source);
-        metrics_results = Some(results.await);
-        dbg!(metrics_results);
-    }
-
     // create summary
     if env.verbose >= 1 {
         summaries::print_cryo_conclusion(&results, query, env)
@@ -88,6 +80,11 @@ pub async fn freeze(
         reports::write_report(env, query, sink, Some(&results))?;
     };
 
+    if let Some(handle) = metrics_handle {
+        // Dropping source will close metrics channel
+        drop(source);
+        MetricsReport::pretty_print(handle.await.unwrap())
+    }
     // return
     Ok(Some(results))
 }
